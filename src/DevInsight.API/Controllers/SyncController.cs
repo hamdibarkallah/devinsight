@@ -90,7 +90,8 @@ public class SyncController : ControllerBase
         var existingShas = (await _commitRepo.GetByRepositoryIdAsync(repositoryId, ct)).Select(c => c.Sha).ToHashSet();
 
         // Use existing commits count to decide: 0 commits in DB = never synced = full fetch
-        var since = existingShas.Count > 0 ? repo.CommitsSyncedAt : null;
+        // Subtract 1 hour buffer to avoid missing commits at the boundary
+        var since = existingShas.Count > 0 ? repo.CommitsSyncedAt?.AddHours(-1) : null;
         var remoteCommits = await svc.GetCommitsAsync(token, repo.FullName, since, ct);
 
         int added = 0;
