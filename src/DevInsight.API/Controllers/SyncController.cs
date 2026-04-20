@@ -56,17 +56,19 @@ public class SyncController : ControllerBase
         // Auto-sync commits + PRs for newly discovered repos
         foreach (var newRepo in newRepos)
         {
-            var saved = (await _repoRepo.GetAllAsync(ct)).FirstOrDefault(r => r.ExternalId == newRepo.ExternalId && r.OrganizationId == orgId);
+            var saved = await _repoRepo.GetByIdAsync(newRepo.Id, ct);
             if (saved is null) continue;
-            var commits = await svc.GetCommitsAsync(token, saved.FullName, null, ct);
-            foreach (var commit in commits) { commit.RepositoryId = saved.Id; await _commitRepo.AddAsync(commit, ct); }
-            var prs = await svc.GetPullRequestsAsync(token, saved.FullName, ct);
-            foreach (var pr in prs) { pr.RepositoryId = saved.Id; await _prRepo.AddAsync(pr, ct); }
-            saved.CommitsSyncedAt = DateTime.UtcNow;
-        }
-        if (newRepos.Count > 0)
-        {
-            await _unitOfWork.SaveChangesAsync(ct);
+            try
+            {
+                var commits = await svc.GetCommitsAsync(token, saved.FullName, null, ct);
+                foreach (var commit in commits) { commit.RepositoryId = saved.Id; await _commitRepo.AddAsync(commit, ct); }
+                var prs = await svc.GetPullRequestsAsync(token, saved.FullName, ct);
+                foreach (var pr in prs) { pr.RepositoryId = saved.Id; await _prRepo.AddAsync(pr, ct); }
+                saved.CommitsSyncedAt = DateTime.UtcNow;
+                _repoRepo.Update(saved);
+                await _unitOfWork.SaveChangesAsync(ct);
+            }
+            catch { /* log and continue to next repo */ }
         }
 
         return Ok(new { message = $"Synced {remoteRepos.Count} repos from {provider}. {added} new.", total = remoteRepos.Count, newlyAdded = added });
@@ -99,6 +101,7 @@ public class SyncController : ControllerBase
             added++;
         }
         repo.CommitsSyncedAt = DateTime.UtcNow;
+        _repoRepo.Update(repo);
         await _unitOfWork.SaveChangesAsync(ct);
 
         return Ok(new { message = $"Synced commits for {repo.FullName}. {added} new.", total = remoteCommits.Count, newlyAdded = added });
