@@ -1,6 +1,6 @@
 # DevInsight – Developer Productivity Tracker
 
-A scalable SaaS-style platform that integrates with Git providers (GitHub, GitLab) and issue tracking tools (Jira) to analyze developer productivity and provide actionable insights.
+A scalable SaaS-style platform that integrates with Git providers (GitHub, GitLab) to analyze developer productivity and provide actionable insights. Features a modern Angular UI for real-time analytics.
 
 ## Architecture
 
@@ -11,12 +11,19 @@ DevInsight/
 │   ├── DevInsight.Application/      # CQRS commands/queries, DTOs, service interfaces
 │   ├── DevInsight.Infrastructure/   # EF Core, GitHub client, encryption, Hangfire jobs
 │   └── DevInsight.API/             # ASP.NET Core Web API, controllers, auth
+├── devinsight-ui/                  # Angular 18 standalone UI
+│   ├── src/app/
+│   │   ├── pages/                  # Dashboard, login pages
+│   │   ├── services/               # API, auth services
+│   │   ├── guards/                 # Auth guard
+│   │   └── interceptors/           # JWT interceptor
+│   └── proxy.conf.json             # Dev server proxy to API
 ├── tests/
 │   └── DevInsight.Tests.Unit/      # Unit tests (xUnit)
 ├── Dockerfile
 ├── docker-compose.yml              # Full stack (API + Postgres + Redis + Elasticsearch)
 ├── docker-compose.minimal.yml      # API + Postgres only
-└── .github/workflows/ci-cd.yml    # GitHub Actions pipeline
+└── .github/workflows/ci-cd.yml    # GitHub Actions pipeline (manual trigger)
 ```
 
 **Clean Architecture** with 4 layers:
@@ -24,14 +31,21 @@ DevInsight/
 - **Application** — CQRS via MediatR. DTOs, command/query handlers.
 - **Infrastructure** — EF Core (PostgreSQL/SQLite), GitHub API client, AES encryption, JWT, Hangfire jobs.
 - **API** — Controllers, authentication, Swagger, middleware.
+- **UI** — Angular 18 standalone components, dark theme, responsive design.
 
 ## Features
 
 ### Implemented
 - **GitHub Integration** — Connect via personal access token, sync repos, commits, and pull requests
+- **Angular Dashboard UI** — Modern dark-themed interface with:
+  - Repository selector with date range filtering
+  - Commit activity chart with tooltips and peak highlighting
+  - Developer stats table with velocity metrics
+  - Anomaly detection panel
+  - Real-time sync buttons
 - **Authentication** — JWT-based register/login with BCrypt password hashing
 - **Multi-tenancy** — Organization-scoped data isolation
-- **Secure Token Storage** — AES-256-CBC encrypted API tokens
+- **Secure Token Storage** — AES-256 encrypted API tokens
 - **Background Jobs** — Hangfire recurring job syncs all GitHub data hourly
 - **Analytics Endpoints**:
   - Per-developer activity stats
@@ -46,11 +60,42 @@ DevInsight/
 ### Planned
 - GitLab integration
 - Jira integration
-- GitHub webhook support
+- GitHub webhook support for real-time updates
 - Redis caching
 - Elasticsearch for search/logs
-- Basic anomaly detection
-- Frontend dashboard
+- Advanced anomaly detection
+
+## Quick Start
+
+### Prerequisites
+- .NET 8 SDK
+- Node.js 18+
+- npm or yarn
+
+### 1. Start the API
+
+```bash
+cd src/DevInsight.API
+dotnet run
+# API runs on http://localhost:5000
+```
+
+### 2. Start the Angular UI
+
+```bash
+cd devinsight-ui
+npm install
+npm run start
+# UI runs on http://localhost:4200
+```
+
+### 3. Use the Dashboard
+
+1. Open http://localhost:4200
+2. Register a new account
+3. Click "Connect GitHub" and paste your PAT
+4. Click "⟳ Sync Repos" — all repos and commits sync automatically
+5. Select a repository to view analytics
 
 ## API Endpoints
 
@@ -64,12 +109,13 @@ DevInsight/
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | POST | `/api/integrations/github` | Store GitHub PAT |
+| PUT | `/api/integrations/github` | Update GitHub PAT |
 | GET | `/api/integrations` | List integrations |
 
 ### Sync
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/sync/repos` | Sync repos from GitHub |
+| POST | `/api/sync/repos/{provider}` | Sync all repos + commits + PRs |
 | GET | `/api/sync/repos` | List synced repos |
 | POST | `/api/sync/commits/{repoId}` | Sync commits for repo |
 | POST | `/api/sync/pull-requests/{repoId}` | Sync PRs for repo |
@@ -83,34 +129,12 @@ DevInsight/
 | GET | `/api/analytics/cycle-time/{repoId}?from=&to=` | PR cycle times |
 | GET | `/api/analytics/bottlenecks/{repoId}` | Bottleneck detection |
 
-### Metrics
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/metrics/repository/{repoId}?from=&to=` | Repository metrics |
-
 ### Health
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/health` | Health check |
 
-## Setup
-
-### Local (Windows — no Docker)
-
-```bash
-# 1. Install .NET 8 SDK (or use standalone install script)
-# 2. Restore and build
-dotnet restore
-dotnet build
-
-# 3. Run (uses SQLite by default)
-dotnet run --project src/DevInsight.API
-
-# 4. Open Swagger UI
-# http://localhost:5000/swagger
-```
-
-### Docker
+## Docker
 
 ```bash
 # Full stack (Postgres + Redis + API)
@@ -123,54 +147,39 @@ docker-compose -f docker-compose.minimal.yml up --build
 docker-compose --profile full up --build
 ```
 
-### Quick Test Flow
-
-```bash
-# 1. Register
-curl -X POST http://localhost:5000/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"email":"dev@test.com","password":"123456","displayName":"Dev","organizationName":"MyOrg"}'
-
-# 2. Use the returned token
-TOKEN="<jwt_token_from_step_1>"
-
-# 3. Add GitHub integration
-curl -X POST http://localhost:5000/api/integrations/github \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"personalAccessToken":"ghp_your_token"}'
-
-# 4. Sync repos
-curl -X POST http://localhost:5000/api/sync/repos \
-  -H "Authorization: Bearer $TOKEN"
-
-# 5. List repos (get a repo ID)
-curl http://localhost:5000/api/sync/repos \
-  -H "Authorization: Bearer $TOKEN"
-
-# 6. Sync commits & PRs for a repo
-curl -X POST http://localhost:5000/api/sync/commits/{repoId} \
-  -H "Authorization: Bearer $TOKEN"
-curl -X POST http://localhost:5000/api/sync/pull-requests/{repoId} \
-  -H "Authorization: Bearer $TOKEN"
-
-# 7. View analytics
-curl "http://localhost:5000/api/analytics/developers/{repoId}?from=2024-01-01&to=2026-12-31" \
-  -H "Authorization: Bearer $TOKEN"
-```
-
 ## Security
 
 - JWT authentication with configurable secret, issuer, audience
 - BCrypt password hashing
-- AES-256-CBC encrypted API tokens
+- AES-256 encrypted API tokens
 - Organization-scoped data isolation (multi-tenant)
-- **Change all secrets in production!**
+- **Change all secrets in production!** See `.env.example` for required secrets.
+
+## Environment Variables
+
+Create `src/DevInsight.API/appsettings.local.json`:
+
+```json
+{
+  "Jwt": {
+    "Secret": "your-jwt-secret-min-32-chars"
+  },
+  "Encryption": {
+    "Key": "your-32-byte-base64-encoded-aes-key"
+  }
+}
+```
+
+Generate AES key:
+```powershell
+[Convert]::ToBase64String((1..32 | ForEach-Object { [byte](Get-Random -Max 256) }))
+```
 
 ## Tech Stack
 
 - **ASP.NET Core 8** — Web API
 - **Entity Framework Core 8** — PostgreSQL / SQLite
+- **Angular 18** — Standalone UI with modern components
 - **MediatR** — CQRS pattern
 - **Hangfire** — Background job scheduling
 - **Serilog** — Structured logging
@@ -184,5 +193,4 @@ curl "http://localhost:5000/api/analytics/developers/{repoId}?from=2024-01-01&to
 - Redis caching layer for analytics
 - Elasticsearch for full-text search and log aggregation
 - Advanced anomaly detection (unusual commit patterns)
-- React/Next.js frontend dashboard
 - Deployment to Render / Railway / Azure free tier
