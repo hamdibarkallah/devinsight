@@ -1,0 +1,41 @@
+<div class="login-wrap">
+  <div class="login-card">
+    <div class="brand">
+      <span class="brand-icon">📊</span>
+      <h1>DevInsight</h1>
+      <p>Developer productivity analytics</p>
+    </div>
+
+    <div class="tabs">
+      <button [class.active]="mode==='login'" (click)="mode='login'">Login</button>
+      <button [class.active]="mode==='register'" (click)="mode='register'">Register</button>
+    </div>
+
+    <form (ngSubmit)="submit()">
+      <div class="field">
+        <label>Email</label>
+        <input type="email" [(ngModel)]="email" name="email" placeholder="you@company.com" required />
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" [(ngModel)]="password" name="password" placeholder="••••••••" required />
+      </div>
+      @if (mode === 'register') {
+        <div class="field">
+          <label>Display Name</label>
+          <input type="text" [(ngModel)]="displayName" name="displayName" placeholder="Your Name" required />
+        </div>
+        <div class="field">
+          <label>Organization Name</label>
+          <input type="text" [(ngModel)]="orgName" name="orgName" placeholder="My Team" required />
+        </div>
+      }
+      @if (error) {
+        <div class="error">{{ error }}</div>
+      }
+      <button type="submit" class="btn-primary" [disabled]="loading">
+        {{ loading ? 'Loading...' : (mode === 'login' ? 'Sign In' : 'Create Account') }}
+      </button>
+    </form>
+  </div>
+</div>

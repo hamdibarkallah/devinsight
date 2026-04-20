@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: devinsight-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      - key: ConnectionStrings__DefaultConnection
+        value: Data Source=/data/devinsight.db
+      - key: Jwt__Secret
+        sync: false  # Set manually in Render dashboard
+      - key: Jwt__Issuer
+        value: DevInsight
+      - key: Jwt__Audience
+        value: DevInsight
+      - key: Encryption__Key
+        sync: false  # Set manually in Render dashboard
+    disk:
+      name: devinsight-data
+      mountPath: /data
+      sizeGB: 1

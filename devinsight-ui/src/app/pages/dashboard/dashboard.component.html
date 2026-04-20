@@ -1,0 +1,204 @@
+<div class="app-shell">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <span>📊</span> DevInsight
+    </div>
+    <nav>
+      <a class="nav-item active">Dashboard</a>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="user-info">
+        <span class="avatar">{{ user?.displayName?.[0] }}</span>
+        <div>
+          <div class="user-name">{{ user?.displayName }}</div>
+          <div class="user-email">{{ user?.email }}</div>
+        </div>
+      </div>
+      <button class="btn-logout" (click)="logout()">Sign out</button>
+    </div>
+  </aside>
+
+  <!-- Main content -->
+  <main class="main">
+    <div class="topbar">
+      <div class="topbar-left">
+        <h2>Dashboard</h2>
+        @if (repos.length) {
+          <select [(ngModel)]="selectedRepoId" (change)="onRepoChange()">
+            @for (r of repos; track r.id) {
+              <option [value]="r.id">{{ r.fullName }}</option>
+            }
+          </select>
+        }
+      </div>
+      <div class="topbar-right">
+        <input type="date" [(ngModel)]="from" (change)="loadAnalytics()" />
+        <span>→</span>
+        <input type="date" [(ngModel)]="to" (change)="loadAnalytics()" />
+        @if (selectedRepoId) {
+          <button class="btn-sync" (click)="syncRepo()" [disabled]="syncing">⟳ Sync</button>
+        }
+        @if (hasGitHub) {
+          <button class="btn-sync" (click)="syncRepos()" [disabled]="syncing">⟳ Sync Repos</button>
+        } @else {
+          <button class="btn-connect" (click)="showTokenInput = !showTokenInput">+ Connect GitHub</button>
+        }
+      </div>
+    </div>
+
+    <!-- Connect GitHub panel -->
+    @if (showTokenInput) {
+      <div class="connect-panel">
+        <p>Paste your <strong>GitHub Personal Access Token</strong> (needs <code>repo</code> scope)</p>
+        <div class="connect-row">
+          <input type="password" [(ngModel)]="githubToken" placeholder="ghp_..." />
+          <button class="btn-primary" (click)="connectGitHub()">Connect</button>
+          <button class="btn-outline" (click)="showTokenInput = false">Cancel</button>
+        </div>
+      </div>
+    }
+
+    @if (syncMsg) {
+      <div class="sync-msg" [class.error]="syncMsg.startsWith('❌')">{{ syncMsg }}</div>
+    }
+
+    @if (!repos.length && !loading) {
+      <div class="empty-state">
+        @if (hasGitHub) {
+          <div class="empty-icon">�</div>
+          <h3>GitHub is connected</h3>
+          <p>Click below to pull your repositories from GitHub.</p>
+          <button class="btn-primary" (click)="syncRepos()" [disabled]="syncing">
+            {{ syncing ? '⏳ Syncing...' : '⟳ Sync Repositories' }}
+          </button>
+        } @else {
+          <div class="empty-icon">�🔗</div>
+          <h3>No repositories yet</h3>
+          <p>Connect your GitHub account and sync your repos to get started.</p>
+          <button class="btn-primary" (click)="showTokenInput = true">Connect GitHub</button>
+        }
+      </div>
+    }
+
+    @if (repos.length) {
+      <!-- Velocity cards -->
+      @if (velocity) {
+        <div class="cards">
+          <div class="card">
+            <div class="card-value">{{ velocity.totalCommits }}</div>
+            <div class="card-label">Total Commits</div>
+          </div>
+          <div class="card">
+            <div class="card-value">{{ velocity.activeDevelopers }}</div>
+            <div class="card-label">Active Developers</div>
+          </div>
+          <div class="card">
+            <div class="card-value">{{ velocity.totalPrsMerged }}</div>
+            <div class="card-label">PRs Merged</div>
+          </div>
+          <div class="card">
+            <div class="card-value">{{ velocity.avgCommitsPerDeveloper }}</div>
+            <div class="card-label">Avg Commits / Dev</div>
+          </div>
+          <div class="card green">
+            <div class="card-value">+{{ velocity.totalAdditions }}</div>
+            <div class="card-label">Lines Added</div>
+          </div>
+          <div class="card red">
+            <div class="card-value">-{{ velocity.totalDeletions }}</div>
+            <div class="card-label">Lines Removed</div>
+          </div>
+        </div>
+      }
+
+      <div class="grid-2">
+        <!-- Developer stats table -->
+        <div class="panel">
+          <h3>👥 Developer Breakdown</h3>
+          @if (devStats.length) {
+            <table>
+              <thead>
+                <tr><th>Developer</th><th>Commits</th><th>PRs</th><th>+Lines</th><th>-Lines</th></tr>
+              </thead>
+              <tbody>
+                @for (d of devStats; track d.authorEmail) {
+                  <tr>
+                    <td>
+                      <div class="dev-name">{{ d.authorName }}</div>
+                      <div class="dev-email">{{ d.authorEmail }}</div>
+                    </td>
+                    <td><span class="badge">{{ d.totalCommits }}</span></td>
+                    <td>{{ d.pullRequestsMerged }}</td>
+                    <td class="green-text">+{{ d.totalAdditions }}</td>
+                    <td class="red-text">-{{ d.totalDeletions }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          } @else {
+            <p class="muted">No developer data in this date range.</p>
+          }
+        </div>
+
+        <!-- Anomalies -->
+        <div class="panel">
+          <h3>🔍 Anomalies & Bottlenecks</h3>
+          @if (bottlenecks.length) {
+            @for (b of bottlenecks; track $index) {
+              <div class="alert warn">⚠️ <strong>{{ b.type }}</strong> — {{ b.description }}</div>
+            }
+          }
+          @if (anomalies.length) {
+            @for (a of anomalies; track $index) {
+              <div class="alert" [class]="severityClass(a.severity)">
+                {{ a.severity === 'Warning' ? '⚠️' : 'ℹ️' }}
+                <strong>{{ a.type }}</strong> — {{ a.description }}
+              </div>
+            }
+          }
+          @if (!bottlenecks.length && !anomalies.length) {
+            <p class="muted">✅ No anomalies detected in this period.</p>
+          }
+        </div>
+      </div>
+
+      <!-- Commit activity -->
+      <div class="panel chart-panel">
+        <div class="chart-header">
+          <h3>📈 Commit Activity</h3>
+          @if (trends.length) {
+            <span class="chart-meta">{{ trends.length }} active days · {{ totalTrendCommits }} commits</span>
+          }
+        </div>
+        @if (trends.length) {
+          <div class="trend-chart">
+            <div class="trend-y-axis">
+              <span>{{ maxTrendCommits }}</span>
+              <span>{{ (maxTrendCommits / 2) | number:'1.0-0' }}</span>
+              <span>0</span>
+            </div>
+            <div class="trend-bars">
+              @for (t of trends; track t.date) {
+                <div class="trend-bar-wrap">
+                  <div class="trend-tooltip">
+                    <strong>{{ t.date.substring(0,10) }}</strong>
+                    <span>{{ t.commits }} commit{{ t.commits !== 1 ? 's' : '' }}</span>
+                    @if (t.additions > 0) { <span class="tt-add">+{{ t.additions }}</span> }
+                    @if (t.deletions > 0) { <span class="tt-del">-{{ t.deletions }}</span> }
+                  </div>
+                  <div class="trend-bar" [style.height.px]="barHeight(t.commits)" [class.peak]="t.commits === maxTrendCommits">
+                    <span class="bar-val">{{ t.commits }}</span>
+                  </div>
+                  <div class="trend-label">{{ t.date.substring(5,10) }}</div>
+                </div>
+              }
+            </div>
+          </div>
+        } @else {
+          <p class="muted">No commit activity in this date range.</p>
+        }
+      </div>
+    }
+  </main>
+</div>

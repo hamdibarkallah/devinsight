@@ -1,0 +1,23 @@
+bin/
+obj/
+*.user
+*.suo
+.vs/
+appsettings.*.local.json
+appsettings.local.json
+Thumbs.db
+.DS_Store
+.idea/
+*.swp
+*.db
+*.db-shm
+*.db-wal
+docker-compose.override.yml
+logs/
+*.log
+packages/
+
+# Angular / Node
+devinsight-ui/node_modules/
+devinsight-ui/dist/
+devinsight-ui/.angular/
