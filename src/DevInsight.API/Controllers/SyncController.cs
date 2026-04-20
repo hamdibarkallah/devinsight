@@ -62,10 +62,10 @@ public class SyncController : ControllerBase
             foreach (var commit in commits) { commit.RepositoryId = saved.Id; await _commitRepo.AddAsync(commit, ct); }
             var prs = await svc.GetPullRequestsAsync(token, saved.FullName, ct);
             foreach (var pr in prs) { pr.RepositoryId = saved.Id; await _prRepo.AddAsync(pr, ct); }
+            saved.CommitsSyncedAt = DateTime.UtcNow;
         }
         if (newRepos.Count > 0)
         {
-            integration.LastSyncedAt = DateTime.UtcNow;
             await _unitOfWork.SaveChangesAsync(ct);
         }
 
@@ -87,8 +87,8 @@ public class SyncController : ControllerBase
         var token = _encryption.Decrypt(integration.EncryptedAccessToken);
         var existingShas = (await _commitRepo.GetByRepositoryIdAsync(repositoryId, ct)).Select(c => c.Sha).ToHashSet();
 
-        // Only use since-filter if we already have commits — otherwise do a full fetch
-        var since = existingShas.Count > 0 ? integration.LastSyncedAt : null;
+        // Use per-repo sync timestamp — null means never synced, fetch everything
+        var since = repo.CommitsSyncedAt;
         var remoteCommits = await svc.GetCommitsAsync(token, repo.FullName, since, ct);
 
         int added = 0;
@@ -98,7 +98,7 @@ public class SyncController : ControllerBase
             await _commitRepo.AddAsync(commit, ct);
             added++;
         }
-        integration.LastSyncedAt = DateTime.UtcNow;
+        repo.CommitsSyncedAt = DateTime.UtcNow;
         await _unitOfWork.SaveChangesAsync(ct);
 
         return Ok(new { message = $"Synced commits for {repo.FullName}. {added} new.", total = remoteCommits.Count, newlyAdded = added });
