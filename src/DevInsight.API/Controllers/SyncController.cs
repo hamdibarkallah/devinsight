@@ -29,7 +29,6 @@ public class SyncController : ControllerBase
         _encryption = encryption; _unitOfWork = unitOfWork;
     }
 
-    /// <summary>Sync all repositories for a given provider (github or gitlab).</summary>
     [HttpPost("repos/{provider}")]
     public async Task<IActionResult> SyncRepos(string provider, CancellationToken ct)
     {
@@ -44,8 +43,7 @@ public class SyncController : ControllerBase
         var existingIds = existingRepos.Where(r => r.OrganizationId == orgId).Select(r => r.ExternalId).ToHashSet();
 
         int added = 0;
-        var newRepos = remoteRepos.Where(r => !existingIds.Contains(r.ExternalId)).ToList();
-        foreach (var repo in newRepos)
+        foreach (var repo in remoteRepos.Where(r => !existingIds.Contains(r.ExternalId)))
         {
             repo.OrganizationId = orgId;
             await _repoRepo.AddAsync(repo, ct);
@@ -53,28 +51,17 @@ public class SyncController : ControllerBase
         }
         await _unitOfWork.SaveChangesAsync(ct);
 
-        // Auto-sync commits + PRs for newly discovered repos
-        foreach (var newRepo in newRepos)
+        // Auto-sync commits + PRs for every repo owned by this org
+        var allRepos = (await _repoRepo.GetAllAsync(ct)).Where(r => r.OrganizationId == orgId).ToList();
+        foreach (var repo in allRepos)
         {
-            var saved = await _repoRepo.GetByIdAsync(newRepo.Id, ct);
-            if (saved is null) continue;
-            try
-            {
-                var commits = await svc.GetCommitsAsync(token, saved.FullName, null, ct);
-                foreach (var commit in commits) { commit.RepositoryId = saved.Id; await _commitRepo.AddAsync(commit, ct); }
-                var prs = await svc.GetPullRequestsAsync(token, saved.FullName, ct);
-                foreach (var pr in prs) { pr.RepositoryId = saved.Id; await _prRepo.AddAsync(pr, ct); }
-                saved.CommitsSyncedAt = DateTime.UtcNow;
-                _repoRepo.Update(saved);
-                await _unitOfWork.SaveChangesAsync(ct);
-            }
-            catch { /* log and continue to next repo */ }
+            try { await SyncCommitsInternal(repo.Id, svc, token, ct); } catch { }
+            try { await SyncPrsInternal(repo.Id, svc, token, ct); } catch { }
         }
 
         return Ok(new { message = $"Synced {remoteRepos.Count} repos from {provider}. {added} new.", total = remoteRepos.Count, newlyAdded = added });
     }
 
-    /// <summary>Sync commits for a specific repository.</summary>
     [HttpPost("commits/{repositoryId:guid}")]
     public async Task<IActionResult> SyncCommits(Guid repositoryId, CancellationToken ct)
     {
@@ -87,28 +74,11 @@ public class SyncController : ControllerBase
 
         var svc = _providerFactory.GetService(repo.Provider);
         var token = _encryption.Decrypt(integration.EncryptedAccessToken);
-        var existingShas = (await _commitRepo.GetByRepositoryIdAsync(repositoryId, ct)).Select(c => c.Sha).ToHashSet();
+        int added = await SyncCommitsInternal(repositoryId, svc, token, ct);
 
-        // Use existing commits count to decide: 0 commits in DB = never synced = full fetch
-        // Subtract 1 hour buffer to avoid missing commits at the boundary
-        var since = existingShas.Count > 0 ? repo.CommitsSyncedAt?.AddHours(-1) : null;
-        var remoteCommits = await svc.GetCommitsAsync(token, repo.FullName, since, ct);
-
-        int added = 0;
-        foreach (var commit in remoteCommits.Where(c => !existingShas.Contains(c.Sha)))
-        {
-            commit.RepositoryId = repositoryId;
-            await _commitRepo.AddAsync(commit, ct);
-            added++;
-        }
-        repo.CommitsSyncedAt = DateTime.UtcNow;
-        _repoRepo.Update(repo);
-        await _unitOfWork.SaveChangesAsync(ct);
-
-        return Ok(new { message = $"Synced commits for {repo.FullName}. {added} new.", total = remoteCommits.Count, newlyAdded = added });
+        return Ok(new { message = $"Synced commits for {repo.FullName}. {added} new.", newlyAdded = added });
     }
 
-    /// <summary>Sync pull requests for a specific repository.</summary>
     [HttpPost("pull-requests/{repositoryId:guid}")]
     public async Task<IActionResult> SyncPullRequests(Guid repositoryId, CancellationToken ct)
     {
@@ -121,8 +91,38 @@ public class SyncController : ControllerBase
 
         var svc = _providerFactory.GetService(repo.Provider);
         var token = _encryption.Decrypt(integration.EncryptedAccessToken);
-        var remotePrs = await svc.GetPullRequestsAsync(token, repo.FullName, ct);
+        int added = await SyncPrsInternal(repositoryId, svc, token, ct);
 
+        return Ok(new { message = $"Synced PRs for {repo.FullName}. {added} new.", newlyAdded = added });
+    }
+
+    /// <summary>Always fetches ALL commits from GitHub. Deduplicates by SHA. No timestamps.</summary>
+    private async Task<int> SyncCommitsInternal(Guid repositoryId, IGitProviderService svc, string token, CancellationToken ct)
+    {
+        var repo = (await _repoRepo.GetAllAsync(ct)).FirstOrDefault(r => r.Id == repositoryId);
+        if (repo is null) return 0;
+
+        var remoteCommits = await svc.GetCommitsAsync(token, repo.FullName, null, ct);
+        var existingShas = (await _commitRepo.GetByRepositoryIdAsync(repositoryId, ct)).Select(c => c.Sha).ToHashSet();
+
+        int added = 0;
+        foreach (var commit in remoteCommits.Where(c => !existingShas.Contains(c.Sha)))
+        {
+            commit.RepositoryId = repositoryId;
+            await _commitRepo.AddAsync(commit, ct);
+            added++;
+        }
+        if (added > 0) await _unitOfWork.SaveChangesAsync(ct);
+        return added;
+    }
+
+    /// <summary>Always fetches ALL PRs. Deduplicates by ExternalId.</summary>
+    private async Task<int> SyncPrsInternal(Guid repositoryId, IGitProviderService svc, string token, CancellationToken ct)
+    {
+        var repo = (await _repoRepo.GetAllAsync(ct)).FirstOrDefault(r => r.Id == repositoryId);
+        if (repo is null) return 0;
+
+        var remotePrs = await svc.GetPullRequestsAsync(token, repo.FullName, ct);
         var existingIds = (await _prRepo.GetByRepositoryIdAsync(repositoryId, ct)).Select(p => p.ExternalId).ToHashSet();
 
         int added = 0;
@@ -132,9 +132,8 @@ public class SyncController : ControllerBase
             await _prRepo.AddAsync(pr, ct);
             added++;
         }
-        await _unitOfWork.SaveChangesAsync(ct);
-
-        return Ok(new { message = $"Synced PRs for {repo.FullName}. {added} new.", total = remotePrs.Count, newlyAdded = added });
+        if (added > 0) await _unitOfWork.SaveChangesAsync(ct);
+        return added;
     }
 
     private async Task<(Guid orgId, Integration? integration, GitProvider provider)> ResolveIntegration(string providerName, CancellationToken ct)
@@ -150,7 +149,6 @@ public class SyncController : ControllerBase
         return (orgId, integration, provider);
     }
 
-    /// <summary>List all synced repositories for the current org.</summary>
     [HttpGet("repos")]
     public async Task<IActionResult> ListRepos(CancellationToken ct)
     {

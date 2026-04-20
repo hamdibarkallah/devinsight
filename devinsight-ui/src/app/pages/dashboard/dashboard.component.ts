@@ -56,14 +56,7 @@ export class DashboardComponent implements OnInit {
 
   onRepoChange() {
     this.selectedRepo = this.repos.find(r => r.id === this.selectedRepoId);
-    // Auto-sync if no data yet
-    this.api.getVelocity(this.selectedRepoId, this.from, this.to).subscribe({ next: v => {
-      if (v.totalCommits === 0) {
-        this.syncRepo();
-      } else {
-        this.loadAnalytics();
-      }
-    }, error: () => this.loadAnalytics() });
+    this.loadAnalytics();
   }
 
   loadAnalytics() {

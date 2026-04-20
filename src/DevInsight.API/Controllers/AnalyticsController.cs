@@ -29,11 +29,12 @@ public class AnalyticsController : ControllerBase
     [HttpGet("developers/{repositoryId:guid}")]
     public async Task<IActionResult> GetDeveloperStats(Guid repositoryId, [FromQuery] DateTime from, [FromQuery] DateTime to, CancellationToken ct)
     {
+        var toEnd = to.Date.AddDays(1).AddTicks(-1);
         var commits = await _commitRepo.GetByRepositoryIdAsync(repositoryId, ct);
         var prs = await _prRepo.GetByRepositoryIdAsync(repositoryId, ct);
 
-        var filtered = commits.Where(c => c.AuthoredAt >= from && c.AuthoredAt <= to).ToList();
-        var filteredPrs = prs.Where(p => p.OpenedAt >= from && p.OpenedAt <= to).ToList();
+        var filtered = commits.Where(c => c.AuthoredAt >= from && c.AuthoredAt <= toEnd).ToList();
+        var filteredPrs = prs.Where(p => p.OpenedAt >= from && p.OpenedAt <= toEnd).ToList();
 
         var devStats = filtered
             .GroupBy(c => new { c.AuthorName, c.AuthorEmail })
@@ -63,14 +64,11 @@ public class AnalyticsController : ControllerBase
     [HttpGet("velocity/{repositoryId:guid}")]
     public async Task<IActionResult> GetTeamVelocity(Guid repositoryId, [FromQuery] DateTime from, [FromQuery] DateTime to, CancellationToken ct)
     {
-        var cacheKey = $"velocity:{repositoryId}:{from:yyyyMMdd}:{to:yyyyMMdd}";
-        var cached = await _cache.GetAsync<TeamVelocityDto>(cacheKey, ct);
-        if (cached is not null) return Ok(cached);
-
+        var toEnd = to.Date.AddDays(1).AddTicks(-1);
         var commits = (await _commitRepo.GetByRepositoryIdAsync(repositoryId, ct))
-            .Where(c => c.AuthoredAt >= from && c.AuthoredAt <= to).ToList();
+            .Where(c => c.AuthoredAt >= from && c.AuthoredAt <= toEnd).ToList();
         var prs = (await _prRepo.GetByRepositoryIdAsync(repositoryId, ct))
-            .Where(p => p.MergedAt.HasValue && p.MergedAt >= from && p.MergedAt <= to).ToList();
+            .Where(p => p.MergedAt.HasValue && p.MergedAt >= from && p.MergedAt <= toEnd).ToList();
 
         var activeDevelopers = commits.Select(c => c.AuthorEmail).Distinct().Count();
 
@@ -81,7 +79,6 @@ public class AnalyticsController : ControllerBase
             activeDevelopers,
             activeDevelopers > 0 ? Math.Round((double)commits.Count / activeDevelopers, 1) : 0
         );
-        await _cache.SetAsync(cacheKey, result, TimeSpan.FromMinutes(10), ct);
         return Ok(result);
     }
 
@@ -89,10 +86,11 @@ public class AnalyticsController : ControllerBase
     [HttpGet("trends/{repositoryId:guid}")]
     public async Task<IActionResult> GetTrends(Guid repositoryId, [FromQuery] DateTime from, [FromQuery] DateTime to, CancellationToken ct)
     {
+        var toEnd = to.Date.AddDays(1).AddTicks(-1);
         var commits = (await _commitRepo.GetByRepositoryIdAsync(repositoryId, ct))
-            .Where(c => c.AuthoredAt >= from && c.AuthoredAt <= to).ToList();
+            .Where(c => c.AuthoredAt >= from && c.AuthoredAt <= toEnd).ToList();
         var prs = (await _prRepo.GetByRepositoryIdAsync(repositoryId, ct))
-            .Where(p => p.MergedAt.HasValue && p.MergedAt >= from && p.MergedAt <= to).ToList();
+            .Where(p => p.MergedAt.HasValue && p.MergedAt >= from && p.MergedAt <= toEnd).ToList();
 
         var days = Enumerable.Range(0, (int)(to - from).TotalDays + 1)
             .Select(offset => from.AddDays(offset).Date)
@@ -113,8 +111,9 @@ public class AnalyticsController : ControllerBase
     [HttpGet("cycle-time/{repositoryId:guid}")]
     public async Task<IActionResult> GetCycleTimes(Guid repositoryId, [FromQuery] DateTime from, [FromQuery] DateTime to, CancellationToken ct)
     {
+        var toEnd = to.Date.AddDays(1).AddTicks(-1);
         var prs = (await _prRepo.GetByRepositoryIdAsync(repositoryId, ct))
-            .Where(p => p.OpenedAt >= from && p.OpenedAt <= to)
+            .Where(p => p.OpenedAt >= from && p.OpenedAt <= toEnd)
             .Select(p => new PrCycleTimeDto(
                 p.Number, p.Title, p.AuthorName,
                 p.ClosedAt.HasValue ? (p.ClosedAt.Value - p.OpenedAt).TotalHours : (DateTime.UtcNow - p.OpenedAt).TotalHours,
