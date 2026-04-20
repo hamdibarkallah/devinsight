@@ -89,8 +89,8 @@ public class SyncController : ControllerBase
         var token = _encryption.Decrypt(integration.EncryptedAccessToken);
         var existingShas = (await _commitRepo.GetByRepositoryIdAsync(repositoryId, ct)).Select(c => c.Sha).ToHashSet();
 
-        // Use per-repo sync timestamp — null means never synced, fetch everything
-        var since = repo.CommitsSyncedAt;
+        // Use existing commits count to decide: 0 commits in DB = never synced = full fetch
+        var since = existingShas.Count > 0 ? repo.CommitsSyncedAt : null;
         var remoteCommits = await svc.GetCommitsAsync(token, repo.FullName, since, ct);
 
         int added = 0;
