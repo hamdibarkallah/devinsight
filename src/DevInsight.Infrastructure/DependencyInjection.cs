@@ -17,7 +17,13 @@ public static class DependencyInjection
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
         var connectionString = configuration.GetConnectionString("DefaultConnection") ?? "Data Source=devinsight.db";
-        services.AddDbContext<DevInsightDbContext>(options => options.UseSqlite(connectionString));
+        services.AddDbContext<DevInsightDbContext>(options =>
+        {
+            if (connectionString.Contains("Host=") || connectionString.Contains("Server="))
+                options.UseNpgsql(connectionString);
+            else
+                options.UseSqlite(connectionString);
+        });
         services.AddScoped(typeof(IRepository<>), typeof(GenericRepository<>));
         services.AddScoped<ICommitRepository, CommitRepository>();
         services.AddScoped<IIntegrationRepository, IntegrationRepository>();

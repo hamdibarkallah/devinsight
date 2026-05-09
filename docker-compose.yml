@@ -7,10 +7,10 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=devinsight;Username=postgres;Password=postgres
-      - Jwt__Secret=CHANGE_ME_IN_PRODUCTION_USE_AT_LEAST_32_CHARS!!
+      - Jwt__Secret=DevInsightLocalDevSecretKey32CharsLong!!
       - Jwt__Issuer=DevInsight
       - Jwt__Audience=DevInsight
-      - Encryption__Key=dGhpcyBpcyBhIDMyIGJ5dGUga2V5ISE=
+      - Encryption__Key=VGhpc0lzRXhhY3RseTMyQnl0ZXNMb25nRm9yQWVzISE=
       - ConnectionStrings__Redis=redis:6379
     depends_on:
       postgres:

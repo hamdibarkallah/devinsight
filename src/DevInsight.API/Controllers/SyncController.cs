@@ -40,10 +40,11 @@ public class SyncController : ControllerBase
         var remoteRepos = await svc.GetRepositoriesAsync(token, ct);
 
         var existingRepos = await _repoRepo.GetAllAsync(ct);
-        var existingIds = existingRepos.Where(r => r.OrganizationId == orgId).Select(r => r.ExternalId).ToHashSet();
+        var orgExistingIds = existingRepos.Where(r => r.OrganizationId == orgId).Select(r => r.ExternalId).ToHashSet();
 
         int added = 0;
-        foreach (var repo in remoteRepos.Where(r => !existingIds.Contains(r.ExternalId)))
+        int skipped = 0;
+        foreach (var repo in remoteRepos.Where(r => !orgExistingIds.Contains(r.ExternalId)))
         {
             repo.OrganizationId = orgId;
             await _repoRepo.AddAsync(repo, ct);
@@ -59,7 +60,7 @@ public class SyncController : ControllerBase
             try { await SyncPrsInternal(repo.Id, svc, token, ct); } catch { }
         }
 
-        return Ok(new { message = $"Synced {remoteRepos.Count} repos from {provider}. {added} new.", total = remoteRepos.Count, newlyAdded = added });
+        return Ok(new { message = $"Synced {remoteRepos.Count} repos from {provider}. {added} new, {skipped} skipped (already exist).", total = remoteRepos.Count, newlyAdded = added, skipped = skipped });
     }
 
     [HttpPost("commits/{repositoryId:guid}")]

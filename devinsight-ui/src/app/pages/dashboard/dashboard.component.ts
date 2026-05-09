@@ -131,4 +131,15 @@ export class DashboardComponent implements OnInit {
   barHeight(commits: number): number {
     return Math.max(4, Math.round((commits / this.maxTrendCommits) * 100));
   }
+
+  exportCsv() {
+    if (!this.selectedRepoId) return;
+    const url = `/api/analytics/export/${this.selectedRepoId}?from=${this.from}&to=${this.to}`;
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `devinsight-export-${this.selectedRepoId}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
 }

@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text;
 using DevInsight.Application.DTOs;
 using DevInsight.Domain.Entities;
 using DevInsight.Domain.Enums;
@@ -165,4 +166,79 @@ public class AnalyticsController : ControllerBase
 
         return Ok(bottlenecks);
     }
+
+    /// <summary>Export repository analytics data as CSV.</summary>
+    [HttpGet("export/{repositoryId:guid}")]
+    public async Task<IActionResult> ExportCsv(Guid repositoryId, [FromQuery] DateTime from, [FromQuery] DateTime to, CancellationToken ct)
+    {
+        var toEnd = to.Date.AddDays(1).AddTicks(-1);
+        var repo = await _repoRepo.GetByIdAsync(repositoryId, ct);
+        if (repo is null) return NotFound(new { message = "Repository not found." });
+
+        var commits = await _commitRepo.GetByRepositoryIdAsync(repositoryId, ct);
+        var prs = await _prRepo.GetByRepositoryIdAsync(repositoryId, ct);
+
+        var filteredCommits = commits.Where(c => c.AuthoredAt >= from && c.AuthoredAt <= toEnd).ToList();
+        var filteredPrs = prs.Where(p => p.OpenedAt >= from && p.OpenedAt <= toEnd).ToList();
+
+        var csv = new StringBuilder();
+        csv.AppendLine("DevInsight Export");
+        csv.AppendLine($"Repository: {repo.FullName}");
+        csv.AppendLine($"Period: {from:yyyy-MM-dd} to {to:yyyy-MM-dd}");
+        csv.AppendLine($"Generated: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC");
+        csv.AppendLine();
+
+        // Developer Stats Section
+        csv.AppendLine("DEVELOPER STATISTICS");
+        csv.AppendLine("Author Name,Email,Commits,Additions,Deletions,Net Lines,PRs Opened,PRs Merged,Avg Lead Time (hrs)");
+        var devStats = filteredCommits
+            .GroupBy(c => new { c.AuthorName, c.AuthorEmail })
+            .Select(g =>
+            {
+                var authorPrs = filteredPrs.Where(p => p.AuthorName == g.Key.AuthorName).ToList();
+                var mergedPrs = authorPrs.Where(p => p.State == PullRequestState.Merged && p.MergedAt.HasValue).ToList();
+                var avgLeadTime = mergedPrs.Any() ? mergedPrs.Average(p => (p.MergedAt!.Value - p.OpenedAt).TotalHours) : 0;
+                return new
+                {
+                    g.Key.AuthorName,
+                    g.Key.AuthorEmail,
+                    Commits = g.Count(),
+                    Additions = g.Sum(c => c.Additions),
+                    Deletions = g.Sum(c => c.Deletions),
+                    NetLines = g.Sum(c => c.Additions - c.Deletions),
+                    PrsOpened = authorPrs.Count,
+                    PrsMerged = mergedPrs.Count,
+                    AvgLeadTime = Math.Round(avgLeadTime, 1)
+                };
+            })
+            .OrderByDescending(d => d.Commits);
+
+        foreach (var d in devStats)
+            csv.AppendLine($"{Escape(d.AuthorName)},{d.AuthorEmail},{d.Commits},{d.Additions},{d.Deletions},{d.NetLines},{d.PrsOpened},{d.PrsMerged},{d.AvgLeadTime}");
+
+        csv.AppendLine();
+
+        // Commits Section
+        csv.AppendLine("COMMITS");
+        csv.AppendLine("SHA,Author,Email,Date,Message,Additions,Deletions");
+        foreach (var c in filteredCommits.OrderByDescending(c => c.AuthoredAt))
+            csv.AppendLine($"{c.Sha},{Escape(c.AuthorName)},{c.AuthorEmail},{c.AuthoredAt:yyyy-MM-dd HH:mm:ss},{Escape(c.Message.Replace("\n", " ").Replace("\r", ""))},{c.Additions},{c.Deletions}");
+
+        csv.AppendLine();
+
+        // Pull Requests Section
+        csv.AppendLine("PULL REQUESTS");
+        csv.AppendLine("Number,Title,Author,State,Opened At,Closed At,Merged At,Lead Time (hrs),Additions,Deletions,Total Changes");
+        foreach (var p in filteredPrs.OrderByDescending(p => p.OpenedAt))
+        {
+            var leadTime = p.MergedAt.HasValue ? (p.MergedAt.Value - p.OpenedAt).TotalHours : (p.ClosedAt.HasValue ? (p.ClosedAt.Value - p.OpenedAt).TotalHours : (DateTime.UtcNow - p.OpenedAt).TotalHours);
+            csv.AppendLine($"{p.Number},{Escape(p.Title)},{Escape(p.AuthorName)},{p.State},{p.OpenedAt:yyyy-MM-dd HH:mm:ss},{p.ClosedAt:yyyy-MM-dd HH:mm:ss},{p.MergedAt:yyyy-MM-dd HH:mm:ss},{Math.Round(leadTime, 1)},{p.Additions},{p.Deletions},{p.Additions + p.Deletions}");
+        }
+
+        var bytes = Encoding.UTF8.GetBytes(csv.ToString());
+        var fileName = $"devinsight-{repo.Name}-{from:yyyyMMdd}-{to:yyyyMMdd}.csv";
+        return File(bytes, "text/csv", fileName);
+    }
+
+    private static string Escape(string value) => $"\"{value.Replace("\"", "\"\"")}\"";
 }

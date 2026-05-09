@@ -38,6 +38,7 @@
         <input type="date" [(ngModel)]="to" (change)="loadAnalytics()" />
         @if (selectedRepoId) {
           <button class="btn-sync" (click)="syncRepo()" [disabled]="syncing">⟳ Sync</button>
+          <button class="btn-outline" (click)="exportCsv()" title="Download CSV report">⬇️ Export</button>
         }
         @if (hasGitHub) {
           <button class="btn-sync" (click)="syncRepos()" [disabled]="syncing">⟳ Sync Repos</button>

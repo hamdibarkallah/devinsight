@@ -16,7 +16,7 @@ public class DevInsightDbContext : DbContext
         base.OnModelCreating(modelBuilder);
         modelBuilder.Entity<Organization>(e => { e.HasKey(o => o.Id); e.Property(o => o.Name).HasMaxLength(200).IsRequired(); });
         modelBuilder.Entity<AppUser>(e => { e.HasKey(u => u.Id); e.Property(u => u.Email).HasMaxLength(256).IsRequired(); e.HasIndex(u => u.Email).IsUnique(); });
-        modelBuilder.Entity<Repository>(e => { e.HasKey(r => r.Id); e.Property(r => r.Name).HasMaxLength(300).IsRequired(); e.HasIndex(r => r.ExternalId).IsUnique(); });
+        modelBuilder.Entity<Repository>(e => { e.HasKey(r => r.Id); e.Property(r => r.Name).HasMaxLength(300).IsRequired(); e.HasIndex(r => new { r.ExternalId, r.OrganizationId }).IsUnique(); });
         modelBuilder.Entity<Commit>(e => { e.HasKey(c => c.Id); e.Property(c => c.Sha).HasMaxLength(40).IsRequired(); e.HasIndex(c => new { c.RepositoryId, c.Sha }).IsUnique(); });
         modelBuilder.Entity<Integration>(e => { e.HasKey(i => i.Id); });
         modelBuilder.Entity<PullRequest>(e => { e.HasKey(pr => pr.Id); e.HasIndex(pr => new { pr.RepositoryId, pr.ExternalId }).IsUnique(); });
